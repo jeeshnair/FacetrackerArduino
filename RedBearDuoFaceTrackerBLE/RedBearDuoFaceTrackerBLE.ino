@@ -205,16 +205,7 @@ float CalculatedDistanceToTarget()
 
 void loop() 
 {
-  // Not currently used. The "meat" of the program is in the callback bleWriteCallback and send_notify
-  //digitalWrite(LEFT_EYE_ANALOG_OUT_PIN, HIGH);
-  //digitalWrite(RIGHT_EYE_ANALOG_OUT_PIN, LOW);
-  //delay(1000);
-  //digitalWrite(LEFT_EYE_ANALOG_OUT_PIN, LOW);
-  //digitalWrite(RIGHT_EYE_ANALOG_OUT_PIN, HIGH);
-  //delay(1000);
 
-  // tone(BUZZER_PIN , 1000);
-  //delay(1000);
   while(emergency == 1 )
   {
     tone(BUZZER_PIN , 1000);
