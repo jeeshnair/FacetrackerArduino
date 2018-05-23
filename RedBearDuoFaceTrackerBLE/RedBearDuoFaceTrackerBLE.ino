@@ -99,6 +99,7 @@ int _sendDataFrequency = 200; // 200ms (how often to read the pins and transmit 
 
 float latestXValue = 0; 
 int servoValue = 0;
+int proximityWarning = 0;
 int emergency = 0;
 
 void setup() {
@@ -205,8 +206,7 @@ float CalculatedDistanceToTarget()
 
 void loop() 
 {
-
-  while(emergency == 1 )
+  while(emergency == 1 || proximityWarning == 1)
   {
     tone(BUZZER_PIN , 1000);
     digitalWrite(LEFT_EYE_ANALOG_OUT_PIN, HIGH);
@@ -215,6 +215,7 @@ void loop()
     digitalWrite(LEFT_EYE_ANALOG_OUT_PIN, LOW);
     digitalWrite(RIGHT_EYE_ANALOG_OUT_PIN, HIGH);
     delay(100);
+    cm = CalculatedDistanceToTarget();
   }
   
   if(emergency == 0 )
@@ -382,28 +383,19 @@ static void bleSendDataTimerCallback(btstack_timer_source_t *ts) {
   // Write code that uses the ultrasonic sensor and transmits this to Android
   // Example ultrasonic code here: https://github.com/jonfroehlich/CSE590Sp2018/tree/master/L06-Arduino/RedBearDuoUltrasonicRangeFinder
   // Also need to check if distance measurement < threshold and sound alarm
-   float averagedDistance  = smoothDistance(cm);  
+   float averagedDistance  = smoothDistance(cm);
    int roundedDistance  = (int)averagedDistance;
 
    Serial.print("Transmitted Rounded Average ");
    Serial.println(roundedDistance);
 
-   if(roundedDistance < 20 )
+   if(roundedDistance < 50 && roundedDistance > 0)
    {
-     tone(BUZZER_PIN , 1000);
-     digitalWrite(LEFT_EYE_ANALOG_OUT_PIN, HIGH);
-     digitalWrite(RIGHT_EYE_ANALOG_OUT_PIN, LOW);
-     delay(100);
-     digitalWrite(LEFT_EYE_ANALOG_OUT_PIN, LOW);
-     digitalWrite(RIGHT_EYE_ANALOG_OUT_PIN, HIGH);
-     delay(100);
+     proximityWarning = 1;
    }
    else
    {
-     noTone(BUZZER_PIN);
-     digitalWrite(LEFT_EYE_ANALOG_OUT_PIN, LOW);
-     digitalWrite(RIGHT_EYE_ANALOG_OUT_PIN, LOW);
-     //delay(100);
+     proximityWarning = 0;
    }
 
   if(roundedDistance>0)
