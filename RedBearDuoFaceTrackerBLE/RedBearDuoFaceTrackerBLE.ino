@@ -1,15 +1,5 @@
 #include "ble_config.h"
 
-/*
- * Provides skeleton code to interact with the Android FaceTrackerBLE app 
- * 
- * Created by Jon Froehlich, May 7, 2018
- * 
- * Based on previous code by Liang He, Bjoern Hartmann, 
- * Chris Dziemborowicz and the RedBear Team. See: 
- * https://github.com/jonfroehlich/CSE590Sp2018/tree/master/A03-BLEAdvanced
- */
-
 #if defined(ARDUINO) 
 SYSTEM_MODE(SEMI_AUTOMATIC); 
 #endif
@@ -29,17 +19,13 @@ SYSTEM_MODE(SEMI_AUTOMATIC);
 /* Define the pins on the Duo board
  * TODO: change and add/subtract the pins here for your applications (as necessary)
  */
-#define LEFT_EYE_ANALOG_OUT_PIN D0
-#define RIGHT_EYE_ANALOG_OUT_PIN D1
-#define HAPPINESS_ANALOG_OUT_PIN D2
+#define LEFT_ANALOG_OUT_PIN D0
+#define RIGHT_ANALOG_OUT_PIN D1
+#define SERVO_ANALOG_OUT_PIN D2
 #define TRIG_PIN D8
 #define ECHO_PIN D9
 #define LED_PIN D8
 #define BUZZER_PIN D12
-
-const int SCREENWIDTHMAX =   640;   // max image horizontal (x)resolution
-const int THRESHOLDCAMERAMOVEMENT = 10;  // significant increments of horizontal (x) camera movement
-const int SERVOSTEPS = 1; // x servo rotation steps
 
 // Anything over 400 cm (23200 us pulse) is "out of range"
 const unsigned int MAX_DIST = 23200;
@@ -69,12 +55,14 @@ static uint8_t receive_data[RECEIVE_MAX_LEN] = { 0x01 };
 int bleReceiveDataCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size); // function declaration for receiving data callback
 static uint8_t send_data[SEND_MAX_LEN] = { 0x00 };
 
+// global distance variable for ultra sonic range finder.
 float cm;
 float inches;
 
+// moving average parameters
 const int numReadings = 10;
 float readings[numReadings];      // the readings from the analog input
-int readIndex = 0;              // the index of the current reading
+int readIndex = 0;                // the index of the current reading
 float total = 0;                  // the running total
 float average = 0;                // the average
 
@@ -97,8 +85,7 @@ static btstack_timer_source_t send_characteristic;
 static void bleSendDataTimerCallback(btstack_timer_source_t *ts); // function declaration for sending data callback
 int _sendDataFrequency = 200; // 200ms (how often to read the pins and transmit the data to Android)
 
-float latestXValue = 0; 
-int servoValue = 0;
+// proximity and emeregency triggers.
 int proximityWarning = 0;
 int emergency = 0;
 
@@ -133,15 +120,15 @@ void setup() {
   Serial.println("BLE start advertising.");
 
   // Setup pins
-  pinMode(LEFT_EYE_ANALOG_OUT_PIN, OUTPUT);
-  pinMode(RIGHT_EYE_ANALOG_OUT_PIN, OUTPUT);
+  pinMode(LEFT_ANALOG_OUT_PIN, OUTPUT);
+  pinMode(RIGHT_ANALOG_OUT_PIN, OUTPUT);
   pinMode(BLE_DEVICE_CONNECTED_DIGITAL_OUT_PIN, OUTPUT);
   pinMode(TRIG_PIN, OUTPUT);
   digitalWrite(TRIG_PIN, LOW);
   pinMode(LED_PIN,OUTPUT);
   pinMode(BUZZER_PIN,OUTPUT);
 
-  _happinessServo.attach(HAPPINESS_ANALOG_OUT_PIN);
+  _happinessServo.attach(SERVO_ANALOG_OUT_PIN);
   _happinessServo.write( (int)((MAX_SERVO_ANGLE - MIN_SERVO_ANGLE) / 2.0) );
 
   // Start a task to check status of the pins on your RedBear Duo
@@ -156,6 +143,9 @@ void setup() {
 }
 }
 
+/*
+ * Function to calculate distance to target based on ultra sonic range finder.
+*/
 float CalculatedDistanceToTarget()
 {
   unsigned long t1;
@@ -206,28 +196,35 @@ float CalculatedDistanceToTarget()
 
 void loop() 
 {
+  // If this is emergency triggered by voice or a proximity triggered by distance , turn on the signals 
   while(emergency == 1 || proximityWarning == 1)
   {
     tone(BUZZER_PIN , 1000);
-    digitalWrite(LEFT_EYE_ANALOG_OUT_PIN, HIGH);
-    digitalWrite(RIGHT_EYE_ANALOG_OUT_PIN, LOW);
+    digitalWrite(LEFT_ANALOG_OUT_PIN, HIGH);
+    digitalWrite(RIGHT_ANALOG_OUT_PIN, LOW);
     delay(100);
-    digitalWrite(LEFT_EYE_ANALOG_OUT_PIN, LOW);
-    digitalWrite(RIGHT_EYE_ANALOG_OUT_PIN, HIGH);
+    digitalWrite(LEFT_ANALOG_OUT_PIN, LOW);
+    digitalWrite(RIGHT_ANALOG_OUT_PIN, HIGH);
     delay(100);
     cm = CalculatedDistanceToTarget();
   }
-  
-  if(emergency == 0 )
+
+  // reset if we are out of emergency mode or proximity mode.
+  if(emergency == 0 || proximityWarning == 0 )
   {
     noTone(BUZZER_PIN);
-    digitalWrite(LEFT_EYE_ANALOG_OUT_PIN, LOW);
-    digitalWrite(RIGHT_EYE_ANALOG_OUT_PIN, LOW);
+    digitalWrite(LEFT_ANALOG_OUT_PIN, LOW);
+    digitalWrite(RIGHT_ANALOG_OUT_PIN, LOW);
   }
   
   cm = CalculatedDistanceToTarget();
 }
 
+/*
+ * Moving average smoothing function to smooth distance measurement from ultrasonic 
+ * range finder.
+*/
+ 
 float smoothDistance(float inputDistance)
 {
   // subtract the last reading:
@@ -308,15 +305,18 @@ int bleReceiveDataCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size
     int servoWrite;
     // process the data. 
     if (receive_data[0] == 0x01) { //receive the face data 
+      // adjust location based on face width.
       int locationX = (int)receive_data[1] << 8 
                       | (int)receive_data[2];
       locationX = locationX + (receive_data[4]/2);
 
+      // if location is less than zero then return.
       if(locationX < 0)
       {
         return 0;
       }
       
+      // detect if we are in portrait or landscape and adjust resolution accordingly.
       if(receive_data[3] == 1)
       {
         if( locationX <= 480 )
@@ -342,7 +342,7 @@ int bleReceiveDataCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size
 
        if(receive_data[5] == 0)
        {
-        servoWrite = 180 - servoWrite;
+          servoWrite = 180 - servoWrite;
        }
     
       Serial.print("Calculated data Location and Servo Angle: ");
@@ -353,20 +353,18 @@ int bleReceiveDataCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size
       _happinessServo.write(servoWrite);
     }
 
+     // sweep the servo by the angle from voice command
       if (receive_data[0] == 0x02) { 
         int servoWrite = (int)receive_data[1];
         _happinessServo.write(servoWrite);
       }
 
+    // set emergency mode from voice command.
      if (receive_data[0] == 0x03) { 
         emergency = (int)receive_data[1];
       }
   }
      
-      // CSE590 Student TODO
-      // Write code here that processes the FaceTrackerBLE data from Android
-      // and properly angles the servo + ultrasonic sensor towards the face
-      // Example servo code here: https://github.com/jonfroehlich/CSE590Sp2018/tree/master/L06-Arduino/RedBearDuoServoSweep   
   return 0;
 }
 
@@ -379,16 +377,15 @@ int bleReceiveDataCallback(uint16_t value_handle, uint8_t *buffer, uint16_t size
  * the connected BLE device (e.g., Android)
  */
 static void bleSendDataTimerCallback(btstack_timer_source_t *ts) {
-  // CSE590 Student TODO
-  // Write code that uses the ultrasonic sensor and transmits this to Android
-  // Example ultrasonic code here: https://github.com/jonfroehlich/CSE590Sp2018/tree/master/L06-Arduino/RedBearDuoUltrasonicRangeFinder
-  // Also need to check if distance measurement < threshold and sound alarm
+   // Take the distance calculated from ultra sonic range finder
+   // smooth it
    float averagedDistance  = smoothDistance(cm);
    int roundedDistance  = (int)averagedDistance;
 
    Serial.print("Transmitted Rounded Average ");
    Serial.println(roundedDistance);
 
+  // if greater than 50 cms( 0.5 meters) set proximity alert variable so that loop function does it's thing.
    if(roundedDistance < 50 && roundedDistance > 0)
    {
      proximityWarning = 1;
@@ -398,6 +395,7 @@ static void bleSendDataTimerCallback(btstack_timer_source_t *ts) {
      proximityWarning = 0;
    }
 
+  // transmit the rounded distance to phone for display
   if(roundedDistance>0)
   {
    send_data[0] = (0x0B);
